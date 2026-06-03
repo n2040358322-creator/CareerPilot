@@ -23,13 +23,13 @@ public class AnalysisRecord {
     @Column(length = 1000)
     private String summary;
 
-    @Column(length = 20000)
+    @Column(columnDefinition = "TEXT")
     private String resumeText;
 
-    @Column(length = 20000)
+    @Column(columnDefinition = "TEXT")
     private String jobDescription;
 
-    @Column(length = 20000)
+    @Column(columnDefinition = "TEXT")
     private String resultJson;
 
     private LocalDateTime createdAt = LocalDateTime.now();

@@ -1,10 +1,13 @@
-# 数据库设计与 MySQL 迁移说明
+# 数据库设计与 MySQL 切换说明
 
-## 当前数据库方案
+CareerPilot 当前支持两种数据库运行方式：
 
-项目当前默认使用 H2 文件数据库，方便本地快速运行和招聘会现场演示。
+- **默认 H2 文件数据库**：适合本地快速演示，不需要额外安装数据库。
+- **MySQL 正式配置**：适合写入简历、后续部署和企业项目展示。
 
-配置位置：
+## 1. 默认 H2 配置
+
+默认配置位于：
 
 ```text
 backend/src/main/resources/application.yml
@@ -19,24 +22,64 @@ spring:
     driver-class-name: org.h2.Driver
     username: sa
     password:
-  jpa:
-    hibernate:
-      ddl-auto: update
 ```
 
 说明：
 
 - `MODE=MySQL`：让 H2 尽量兼容 MySQL 语法。
-- `ddl-auto=update`：由 JPA 根据实体自动更新表结构。
-- 数据文件位于 `backend/data/`，该目录已加入 `.gitignore`，不建议上传 GitHub。
+- `backend/data/`：保存 H2 文件数据库，已加入 `.gitignore`。
+- 本地演示时不需要安装 MySQL，直接 `mvn spring-boot:run` 即可。
 
-## 核心表
+## 2. MySQL Profile 配置
 
-### 1. `app_user`
+MySQL 独立配置位于：
 
-用户表，用于注册登录和历史记录用户隔离。
+```text
+backend/src/main/resources/application-mysql.yml
+```
 
-| 字段 | 类型建议 | 说明 |
+启用 MySQL 时设置：
+
+```env
+SPRING_PROFILES_ACTIVE=mysql
+MYSQL_URL=jdbc:mysql://localhost:3306/careerpilot?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+MYSQL_USERNAME=root
+MYSQL_PASSWORD=123456
+JPA_DDL_AUTO=update
+```
+
+启动命令：
+
+```powershell
+cd C:\Users\Administrator\CareerPilot\backend
+mvn spring-boot:run
+```
+
+## 3. 创建 MySQL 数据库
+
+先在 MySQL 中执行：
+
+```sql
+CREATE DATABASE careerpilot
+  DEFAULT CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+```
+
+如果使用 JPA 自动建表，创建数据库后直接启动后端即可。
+
+如果希望手动建表，可以参考：
+
+```text
+docs/schema-mysql.sql
+```
+
+## 4. 核心表设计
+
+### app_user
+
+用户表，用于注册登录和历史记录隔离。
+
+| 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | BIGINT | 主键，自增 |
 | `username` | VARCHAR(40) | 用户名，唯一 |
@@ -45,11 +88,11 @@ spring:
 | `salt` | VARCHAR(255) | 密码盐值 |
 | `created_at` | DATETIME | 创建时间 |
 
-### 2. `analysis_record`
+### analysis_record
 
 分析记录表，用于保存 AI 简历分析结果。
 
-| 字段 | 类型建议 | 说明 |
+| 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | BIGINT | 主键，自增 |
 | `resume_name` | VARCHAR(255) | 简历名称 |
@@ -61,88 +104,24 @@ spring:
 | `result_json` | TEXT | 完整分析结果 JSON |
 | `created_at` | DATETIME | 创建时间 |
 
-## MySQL 建表 SQL
-
-如果后续切换 MySQL，可以使用以下结构作为第一版：
+## 5. 推荐索引
 
 ```sql
-CREATE TABLE app_user (
-  id BIGINT PRIMARY KEY AUTO_INCREMENT,
-  username VARCHAR(40) NOT NULL UNIQUE,
-  phone VARCHAR(20) UNIQUE,
-  password_hash VARCHAR(255) NOT NULL,
-  salt VARCHAR(255) NOT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+CREATE INDEX idx_analysis_user_created
+  ON analysis_record(user_id, created_at DESC);
 
-CREATE TABLE analysis_record (
-  id BIGINT PRIMARY KEY AUTO_INCREMENT,
-  resume_name VARCHAR(255),
-  user_id BIGINT,
-  match_score INT,
-  summary VARCHAR(1000),
-  resume_text TEXT,
-  job_description TEXT,
-  result_json TEXT,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_analysis_user_created (user_id, created_at DESC),
-  INDEX idx_analysis_created (created_at DESC)
-);
+CREATE INDEX idx_analysis_created
+  ON analysis_record(created_at DESC);
 ```
 
-## MySQL 迁移步骤
+说明：
 
-### 1. 添加 MySQL 驱动
+- `idx_analysis_user_created`：用于登录用户查看自己的最近分析记录。
+- `idx_analysis_created`：用于匿名记录或全局最近记录倒序查询。
 
-在 `backend/pom.xml` 中加入：
+## 6. 面试讲解说法
 
-```xml
-<dependency>
-    <groupId>com.mysql</groupId>
-    <artifactId>mysql-connector-j</artifactId>
-    <scope>runtime</scope>
-</dependency>
-```
+可以这样讲：
 
-### 2. 修改数据库配置
-
-建议通过环境变量管理：
-
-```yaml
-spring:
-  datasource:
-    url: ${MYSQL_URL:jdbc:mysql://localhost:3306/careerpilot?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    username: ${MYSQL_USERNAME:root}
-    password: ${MYSQL_PASSWORD:123456}
-```
-
-### 3. 创建数据库
-
-```sql
-CREATE DATABASE careerpilot DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
-
-### 4. 推荐生产配置
-
-开发阶段可以继续使用：
-
-```yaml
-spring.jpa.hibernate.ddl-auto: update
-```
-
-正式部署建议改为：
-
-```yaml
-spring.jpa.hibernate.ddl-auto: validate
-```
-
-并使用 SQL 脚本或迁移工具维护表结构。
-
-## 面试讲解要点
-
-- 当前项目为了演示方便使用 H2 文件数据库，但实体和 JPA 设计已经按关系型数据库建模。
-- `analysis_record` 通过 `user_id` 和 `created_at` 支持“按用户查询最近记录”的业务场景。
-- 切换 MySQL 的核心工作是引入驱动、修改数据源配置、创建数据库和索引。
-- 如果数据量增加，可以重点优化 `idx_analysis_user_created`，因为历史记录列表通常按用户和时间倒序查询。
+> 项目默认使用 H2 文件数据库，方便本地演示；同时我已经补充了 MySQL 驱动和 `mysql` profile，正式环境只需要设置 `SPRING_PROFILES_ACTIVE=mysql` 和 MySQL 连接信息即可切换。历史记录表按 `user_id + created_at` 建索引，支持按用户查询最近分析记录。
 
