@@ -10,6 +10,7 @@ public class ChatRequest {
     private String resumeText;
     private String jobDescription;
     private AiRuntimeConfig aiConfig;
+    private Long sessionId;
 
     @Valid
     @NotEmpty(message = "对话消息不能为空")
@@ -39,6 +40,14 @@ public class ChatRequest {
         this.aiConfig = aiConfig;
     }
 
+    public Long getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(Long sessionId) {
+        this.sessionId = sessionId;
+    }
+
     public List<ChatMessage> getMessages() {
         return messages;
     }
@@ -47,4 +56,3 @@ public class ChatRequest {
         this.messages = messages;
     }
 }
-

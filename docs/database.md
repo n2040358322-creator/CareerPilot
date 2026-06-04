@@ -104,6 +104,33 @@ docs/schema-mysql.sql
 | `result_json` | TEXT | 完整分析结果 JSON |
 | `created_at` | DATETIME | 创建时间 |
 
+### chat_session
+
+AI 对话会话表，用于保存每一段聊天的标题、上下文和更新时间。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | BIGINT | 主键，自增 |
+| `user_id` | BIGINT | 用户 ID |
+| `title` | VARCHAR(120) | 会话标题，默认取第一条用户问题 |
+| `resume_text` | TEXT | 会话创建时的简历上下文 |
+| `job_description` | TEXT | 会话创建时的岗位 JD 上下文 |
+| `created_at` | DATETIME | 创建时间 |
+| `updated_at` | DATETIME | 最近更新时间 |
+
+### chat_message_record
+
+AI 对话消息表，用于保存用户消息和 AI 回复。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | BIGINT | 主键，自增 |
+| `session_id` | BIGINT | 所属会话 ID |
+| `user_id` | BIGINT | 用户 ID |
+| `role` | VARCHAR(20) | 消息角色，`user` 或 `assistant` |
+| `content` | TEXT | 消息内容 |
+| `created_at` | DATETIME | 创建时间 |
+
 ## 5. 推荐索引
 
 ```sql
@@ -112,6 +139,12 @@ CREATE INDEX idx_analysis_user_created
 
 CREATE INDEX idx_analysis_created
   ON analysis_record(created_at DESC);
+
+CREATE INDEX idx_chat_session_user_updated
+  ON chat_session(user_id, updated_at DESC);
+
+CREATE INDEX idx_chat_message_session_created
+  ON chat_message_record(session_id, created_at ASC);
 ```
 
 说明：
@@ -124,4 +157,3 @@ CREATE INDEX idx_analysis_created
 可以这样讲：
 
 > 项目默认使用 H2 文件数据库，方便本地演示；同时我已经补充了 MySQL 驱动和 `mysql` profile，正式环境只需要设置 `SPRING_PROFILES_ACTIVE=mysql` 和 MySQL 连接信息即可切换。历史记录表按 `user_id + created_at` 建索引，支持按用户查询最近分析记录。
-

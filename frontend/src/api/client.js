@@ -72,6 +72,18 @@ export function sendChatMessage(payload) {
   return client.post('/chat', payload)
 }
 
+export function loadChatSessions() {
+  return client.get('/chat/sessions')
+}
+
+export function loadChatSessionDetail(id) {
+  return client.get(`/chat/sessions/${id}`)
+}
+
+export function deleteChatSession(id) {
+  return client.delete(`/chat/sessions/${id}`)
+}
+
 export function register(payload) {
   return client.post('/auth/register', payload)
 }

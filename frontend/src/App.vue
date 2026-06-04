@@ -161,6 +161,37 @@
 
           <el-tab-pane label="AI 对话" name="chat">
             <div class="chat-layout">
+              <div class="chat-history-panel">
+                <div class="chat-history-actions">
+                  <el-button size="small" type="primary" plain @click="startNewChatSession">新对话</el-button>
+                  <el-button size="small" :loading="chatSessionsLoading" @click="refreshChatSessions">刷新历史</el-button>
+                  <span class="chat-history-tip">
+                    {{ currentUser ? '登录后自动保存 AI 对话' : '登录后可保存和恢复对话' }}
+                  </span>
+                </div>
+                <div v-if="currentUser && chatSessions.length > 0" class="chat-session-list">
+                  <button
+                    v-for="session in chatSessions"
+                    :key="session.id"
+                    class="chat-session-item"
+                    :class="{ 'chat-session-item--active': session.id === chatSessionId }"
+                    type="button"
+                    @click="restoreChatSession(session.id)"
+                  >
+                    <span>{{ session.title || '新的 AI 对话' }}</span>
+                    <small>{{ formatTime(session.updatedAt) }}</small>
+                    <el-button
+                      class="chat-session-delete"
+                      size="small"
+                      text
+                      type="danger"
+                      @click.stop="removeChatSession(session.id)"
+                    >
+                      删除
+                    </el-button>
+                  </button>
+                </div>
+              </div>
               <div class="chat-messages">
                 <div v-if="chatMessages.length === 0" class="empty-card">
                   <strong>问问 CareerPilot</strong>
@@ -485,8 +516,11 @@ import {
   AUTH_TOKEN_KEY,
   analyzeResume,
   buildResume,
+  deleteChatSession,
   deleteRecord,
   generateQuestions,
+  loadChatSessionDetail,
+  loadChatSessions,
   loadCurrentUser,
   loadAiStatus,
   loadRecordDetail,
@@ -550,6 +584,9 @@ const openSections = ref(['strengths', 'gaps', 'suggestions'])
 const chatInput = ref('')
 const chatting = ref(false)
 const chatMessages = ref([])
+const chatSessionId = ref(null)
+const chatSessions = ref([])
+const chatSessionsLoading = ref(false)
 const recordLoadingId = ref(null)
 const recordDeletingId = ref(null)
 const resumeBuilding = ref(false)
@@ -807,14 +844,81 @@ async function handleChat() {
     const response = await sendChatMessage({
       resumeText: resumeText.value,
       jobDescription: jobDescription.value,
+      sessionId: chatSessionId.value,
       messages: nextMessages,
       aiConfig: runtimeAiConfig()
     })
+    if (response.data.sessionId) {
+      chatSessionId.value = response.data.sessionId
+    }
     chatMessages.value.push({ role: 'assistant', content: response.data.answer })
+    await refreshChatSessions(false)
   } catch (error) {
     ElMessage.error(error.message || 'AI 对话失败')
   } finally {
     chatting.value = false
+  }
+}
+
+function startNewChatSession() {
+  chatSessionId.value = null
+  chatMessages.value = []
+  chatInput.value = ''
+}
+
+async function refreshChatSessions(showError = true) {
+  if (!currentUser.value) {
+    chatSessions.value = []
+    return
+  }
+  chatSessionsLoading.value = true
+  try {
+    const response = await loadChatSessions()
+    chatSessions.value = response.data || []
+  } catch (error) {
+    if (showError) {
+      ElMessage.error(error.message || '加载对话历史失败')
+    }
+  } finally {
+    chatSessionsLoading.value = false
+  }
+}
+
+async function restoreChatSession(id) {
+  try {
+    const response = await loadChatSessionDetail(id)
+    const session = response.data
+    chatSessionId.value = session.id
+    resumeText.value = session.resumeText || resumeText.value
+    jobDescription.value = session.jobDescription || jobDescription.value
+    chatMessages.value = (session.messages || []).map((message) => ({
+      role: message.role,
+      content: message.content
+    }))
+    rightTab.value = 'chat'
+    ElMessage.success('已恢复 AI 对话')
+  } catch (error) {
+    ElMessage.error(error.message || '恢复对话失败')
+  }
+}
+
+async function removeChatSession(id) {
+  try {
+    await ElMessageBox.confirm('确定删除这段 AI 对话历史吗？', '删除确认', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    await deleteChatSession(id)
+    if (chatSessionId.value === id) {
+      startNewChatSession()
+    }
+    await refreshChatSessions(false)
+    ElMessage.success('AI 对话已删除')
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error.message || '删除对话失败')
+    }
   }
 }
 
@@ -1248,6 +1352,7 @@ async function submitAuth() {
     }
     authVisible.value = false
     await refreshRecords()
+    await refreshChatSessions(false)
     ElMessage.success(authMode.value === 'login' ? '登录成功' : '注册成功，已自动登录')
   } catch (error) {
     ElMessage.error(error.message || '认证失败')
@@ -1278,15 +1383,18 @@ function stopCodeCountdown() {
 async function refreshCurrentUser() {
   if (!localStorage.getItem(AUTH_TOKEN_KEY)) {
     currentUser.value = null
+    chatSessions.value = []
     return
   }
 
   try {
     const response = await loadCurrentUser()
     currentUser.value = response.data
+    await refreshChatSessions(false)
   } catch (error) {
     localStorage.removeItem(AUTH_TOKEN_KEY)
     currentUser.value = null
+    chatSessions.value = []
   }
 }
 
@@ -1296,6 +1404,8 @@ async function logout() {
   analysis.value = null
   questions.value = []
   interviewFeedback.value = ''
+  chatSessions.value = []
+  startNewChatSession()
   await refreshRecords()
   ElMessage.success('已退出登录')
 }
@@ -2642,14 +2752,82 @@ onMounted(() => {
 .chat-layout {
   height: 100%;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-height: 0;
+}
+
+.chat-history-panel {
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid #e4eaf3;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.chat-history-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-history-tip {
+  margin-left: auto;
+  color: #8492a6;
+  font-size: 12px;
+}
+
+.chat-session-list {
+  display: grid;
+  gap: 8px;
+  max-height: 132px;
+  overflow-y: auto;
+  margin-top: 10px;
+  padding-right: 4px;
+}
+
+.chat-session-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  align-items: center;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #e2e9f4;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #26364d;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-session-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.chat-session-item small {
+  grid-column: 1;
+  color: #93a0b3;
+  font-size: 11px;
+}
+
+.chat-session-item--active {
+  border-color: #2f7df6;
+  background: #eef5ff;
+}
+
+.chat-session-delete {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
 .chat-messages {
   display: grid;
   align-content: start;
   gap: 10px;
+  overflow-y: auto;
+  padding: 16px 18px;
 }
 
 .chat-bubble {
