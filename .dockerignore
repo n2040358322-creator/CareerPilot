@@ -1,0 +1,13 @@
+.git
+.idea
+.vscode
+node_modules
+dist
+target
+*.log
+.env
+backend/.env
+backend/data
+frontend/node_modules
+frontend/dist
+docs/*.docx

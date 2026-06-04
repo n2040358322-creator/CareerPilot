@@ -152,6 +152,24 @@ npm run dev
 http://localhost:5173
 ```
 
+## Docker 部署
+
+项目已支持 Docker Compose 一键部署 MySQL、Redis、后端和前端：
+
+```powershell
+cd C:\Users\Administrator\CareerPilot
+docker compose up -d --build
+```
+
+启动后访问：
+
+- 前端页面：`http://localhost:3000`
+- 后端健康检查：`http://localhost:8081/api/health`
+- Docker MySQL：`localhost:3307`
+- Docker Redis：`localhost:6380`
+
+详细说明见：`docs/docker-deploy.md`
+
 ## 主要接口
 
 完整接口文档见：`docs/api.md`

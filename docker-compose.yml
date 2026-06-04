@@ -1,0 +1,73 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: careerpilot-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root123456
+      MYSQL_DATABASE: careerpilot
+      MYSQL_USER: careerpilot
+      MYSQL_PASSWORD: careerpilot123
+      TZ: Asia/Shanghai
+    ports:
+      - "3307:3306"
+    volumes:
+      - careerpilot_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ucareerpilot", "-pcareerpilot123"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: careerpilot-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - careerpilot_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    container_name: careerpilot-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: mysql,docker
+      MYSQL_URL: jdbc:mysql://mysql:3306/careerpilot?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      MYSQL_USERNAME: careerpilot
+      MYSQL_PASSWORD: careerpilot123
+      JPA_DDL_AUTO: update
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.okinto.com/v1}
+      AI_MODEL: ${AI_MODEL:-gpt-5.5}
+      JWT_SECRET: ${JWT_SECRET:-careerpilot-docker-secret-change-me}
+    ports:
+      - "8081:8080"
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: careerpilot-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  careerpilot_mysql_data:
+  careerpilot_redis_data:
